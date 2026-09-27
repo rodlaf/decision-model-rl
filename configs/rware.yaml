@@ -1,0 +1,72 @@
+model_path: models/base/qwen3.5-0.8b-nli-v5
+initial_adapter: models/trained
+source_run: published cooperative Overcooked checkpoint 220
+source_best_iteration: 220
+source_best_soups: 6
+run_dir: runs/rware-from-cooking-220
+environment: rware_tiny_two_robots
+prompt_version: rware_native27_v1
+num_agents: 2
+group_size: 8
+rollout_steps: 256
+learning_rate: 5.0e-06
+head_learning_rate: 1.0e-05
+lora_rank: 16
+lora_alpha: 32
+clip_epsilon: 0.2
+entropy_coefficient: 0.05
+update_epochs: 2
+history_window: 8
+max_tokens: 512
+checkpoint_every: 5
+eval_every: 5
+eval_steps: 512
+seed: 20260927
+rules: 'Warehouse: deliver requested shelves to delivery goals, then return emptied
+  shelves to shelf storage. You control one robot; the other acts independently. Choose
+  ONE native button. Move forward advances one tile in your facing direction. Turn
+  left/right rotates 90 degrees without moving. Toggle load picks up a requested shelf
+  on your tile, delivers it at a goal, or returns an emptied shelf at storage. Unloaded
+  robots can travel under shelves; loaded robots cannot enter other shelves. Avoid
+  collisions. Coordinates increase right/down. Only the eight neighboring tiles are
+  observed; your current tile is not reported. Recent moves record previously observed
+  arrival tiles.'
+actions:
+- wait
+- move forward
+- turn left
+- turn right
+- toggle load
+hypothesis: Your next action should be {action}.
+duration_hours: 100
+gradient_checkpointing: false
+microbatch_states: 8
+optimizer_batch_size: 128
+target_kl: 0.03
+fast_convolution: true
+mixed_precision: true
+shared_prefix: true
+rollout_batch_states: 16
+inhibit_suspend: false
+training_token_budget: 3000
+reward_scheme: pufferlib_rware_native
+liger_kernels: true
+explicit_masks: true
+credit_assignment: reward_to_go
+discount_gamma: 0.995
+novelty_bonus: 0.01
+novelty_episode_cap: 0.3
+novelty_segment_cap: 0.05
+novelty_quantization: 0.005
+adaptive_entropy: true
+entropy_target: 1.3
+entropy_adaptation_rate: 0.2
+entropy_min: 0.02
+entropy_max: 0.2
+repeated_noop_penalty: 0.01
+stuck_entropy_gain: 1.0
+stuck_entropy_cap: 4
+requests: 2
+video_dir: videos/rware
+retention_config: configs/duo.yaml
+retention_steps: 512

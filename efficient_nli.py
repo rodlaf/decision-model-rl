@@ -19,16 +19,16 @@ def assign_recurrent(self,recurrent_states,state_idx=0,**kwargs):
     return recurrent_states
 
 def shared_prefix_distributions(policy,states):
-    from policy import ACTIONS
+    actions=policy.actions;count=len(actions)
     device=next(policy.model.parameters()).device
     if not hasattr(policy,'_nli_tokens'):policy._nli_tokens=OrderedDict()
     token_cache=policy._nli_tokens
     missing=list(dict.fromkeys(s for s in states if s not in token_cache))
     if missing:
-        texts=[policy.template.format(premise=s,hypothesis=policy.cfg['hypothesis'].format(action=a)) for s in missing for a in ACTIONS]
+        texts=[policy.template.format(premise=s,hypothesis=policy.cfg['hypothesis'].format(action=a)) for s in missing for a in actions]
         ids=policy.tok(texts)['input_ids']
         for i,state in enumerate(missing):
-            rows=ids[i*6:i*6+6];split=0;limit=min(map(len,rows))-2
+            rows=ids[i*count:(i+1)*count];split=0;limit=min(map(len,rows))-2
             while split<limit and all(row[split]==rows[0][split] for row in rows):split+=1
             token_cache[state]=(rows[0][:split],[row[split:] for row in rows],max(map(len,rows)))
     prefixes=[];suffixes=[];length=0
@@ -48,13 +48,13 @@ def shared_prefix_distributions(policy,states):
     # One asynchronous host-to-device copy, prepared before either model pass.
     flat=[v for array in arrays for row in array for v in row]
     packed=torch.tensor(flat,dtype=torch.long,pin_memory=device.type=='cuda').to(device,non_blocking=True)
-    b=len(states);n=b*6
+    b=len(states);n=b*count
     pieces=packed.split([b*prefix_width,b*prefix_width,n*suffix_width,n*suffix_width])
     prefix_ids,prefix_mask=(v.reshape(b,prefix_width) for v in pieces[:2])
     suffix_ids,suffix_mask=(v.reshape(n,suffix_width) for v in pieces[2:])
     prefix_pos=(prefix_mask.cumsum(-1)-1).clamp_min(0).unsqueeze(0).expand(3,-1,-1)
-    mask=torch.cat((prefix_mask.repeat_interleave(6,0),suffix_mask),dim=-1)
-    suffix_pos=(prefix_mask.sum(-1).repeat_interleave(6)[:,None]+torch.arange(suffix_width,device=device)[None,:]).unsqueeze(0).expand(3,-1,-1)
+    mask=torch.cat((prefix_mask.repeat_interleave(count,0),suffix_mask),dim=-1)
+    suffix_pos=(prefix_mask.sum(-1).repeat_interleave(count)[:,None]+torch.arange(suffix_width,device=device)[None,:]).unsqueeze(0).expand(3,-1,-1)
     prefix_attention=prefix_mask;suffix_attention=mask
     if policy.cfg.get('explicit_masks',False):
         p=torch.arange(prefix_width,device=device)
@@ -64,7 +64,7 @@ def shared_prefix_distributions(policy,states):
         suffix_attention={'full_attention':(k[None,:]<=q[:,None])[None,None,:,:]&mask[:,None,None,:].bool(),'linear_attention':suffix_mask}
     model=policy.model.get_base_model()
     cache=model.model(input_ids=prefix_ids,attention_mask=prefix_attention,position_ids=prefix_pos,use_cache=True).past_key_values
-    cache.reorder_cache(torch.arange(len(states),device=device).repeat_interleave(6))
+    cache.reorder_cache(torch.arange(len(states),device=device).repeat_interleave(count))
     for layer in cache.layers:
         if hasattr(layer,'recurrent_states'):
             # An instance-bound method would create layer -> method -> layer cycles,
@@ -75,5 +75,5 @@ def shared_prefix_distributions(policy,states):
             layer.__class__=_functional_cache_classes[cls]
     hidden=model.model(input_ids=suffix_ids,attention_mask=suffix_attention,position_ids=suffix_pos,past_key_values=cache,use_cache=True).last_hidden_state
     logits=model.score(hidden[torch.arange(n,device=device),suffix_mask.sum(-1)-1]).float()
-    ent=torch.log_softmax(logits,-1)[:,1].reshape(len(states),6)
+    ent=torch.log_softmax(logits,-1)[:,1].reshape(len(states),count)
     return ent-torch.logsumexp(ent,-1,keepdim=True)

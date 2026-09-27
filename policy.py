@@ -69,7 +69,7 @@ class Prompt:
 
 class Policy:
     def __init__(self,cfg):
-        path=ROOT/cfg['model_path'];self.cfg=cfg
+        path=ROOT/cfg['model_path'];self.cfg=cfg;self.actions=list(cfg.get('actions',ACTIONS))
         if cfg.get('fast_convolution',False):
             from efficient_nli import enable_fast_convolution
             enable_fast_convolution()
@@ -97,7 +97,7 @@ class Policy:
                 return shared_prefix_distributions(self,states)
             return self._full_distributions(states)
     def _full_distributions(self,states):
-        texts=[self.template.format(premise=state,hypothesis=self.cfg['hypothesis'].format(action=a)) for state in states for a in ACTIONS]
+        texts=[self.template.format(premise=state,hypothesis=self.cfg['hypothesis'].format(action=a)) for state in states for a in self.actions]
         enc=self.tok(texts,padding=True,return_tensors='pt').to('cuda')
         length=enc.input_ids.shape[1];self.metadata['max_tokens']=max(length,self.metadata['max_tokens'])
         if length>self.cfg['max_tokens']:raise RuntimeError(f'Prompt has {length} tokens, exceeds {self.cfg["max_tokens"]}; no truncation allowed')
@@ -105,7 +105,7 @@ class Policy:
         hidden=model.model(**enc,use_cache=False).last_hidden_state
         last=enc.attention_mask.sum(-1)-1
         logits=model.score(hidden[torch.arange(len(texts),device='cuda'),last]).float()
-        log_entail=torch.log_softmax(logits,dim=-1)[:,1].reshape(len(states),len(ACTIONS))
+        log_entail=torch.log_softmax(logits,dim=-1)[:,1].reshape(len(states),len(self.actions))
         log_probs=log_entail-torch.logsumexp(log_entail,dim=-1,keepdim=True)
         return log_probs
     def load(self,path):

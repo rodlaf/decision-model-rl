@@ -44,7 +44,7 @@ Shared-prefix scoring, fused convolutions, and Liger kernels reduce repeated com
 
 `policy.py` contains the native observation description and NLI policy. `efficient_nli.py` implements differentiable shared-prefix scoring. `exploration_objectives.py` supplies environment-independent exploration and credit assignment. `train.py` collects independent actions from both chefs; `train_single.py` contains the common optimizer and the single-chef training loop. `kitchen.py` and `overcooked_bridge.c` wrap the pinned native environment. `render.py` renders verified traces.
 
-Overcooked is the only supported environment today. For another PufferLib game, supply its native observation/action interface and text description, then adapt the collector and renderer. The optimizer and exploration objectives can be reused. The current observation decoder assumes the 5×5 Cramped Room layout, and the six-action optimization is specific to this example.
+Overcooked and the tiny two-robot RWARE environment are supported. For another PufferLib game, supply its native observation/action interface and text description, then adapt the collector and renderer. The optimizer and exploration objectives can be reused. The current observation decoder assumes the 5×5 Cramped Room layout, and the action list is supplied by each game’s YAML configuration.
 
 ```bash
 python -m unittest discover -s tests -v
@@ -55,3 +55,14 @@ python -m unittest discover -s tests -v
 [OpenJev](https://huggingface.co/AlexWortega/openjev/tree/552759daad712f1af6c4c13dabcb1e047886fc9c/qwen3.5-0.8b-nli-v5), an open implementation of the [Jev decision-model idea](https://typesafe.ai/blog/introducing-system-one-models-and-jev), supplies the pretrained Qwen3.5-0.8B NLI classifier. [PufferLib](https://github.com/PufferAI/PufferLib/tree/6ffa5b10dbbbe4d1e8288367c7d9d3acd3bad4a2/ocean/overcooked) supplies the environment and sprites. Training builds on [LoRA](https://arxiv.org/abs/2106.09685), [PPO](https://arxiv.org/abs/1707.06347), and [GRPO](https://arxiv.org/abs/2402.03300). The write-up contains full references and the experiment's limitations.
 
 MIT license for this repository. Downloaded dependencies and base weights retain their respective licenses.
+
+## Sequential training on RWARE
+
+```bash
+bash build_rware.sh
+python train_rware.py --config configs/rware.yaml
+```
+
+This continues the released cooking checkpoint 220 on PufferLib’s tiny warehouse with two independently acting robots. It updates the same LoRA adapters and NLI head. Robots receive only their native 27-value observation expressed in text and eight recent action outcomes. The five choices are wait, move forward, turn left, turn right, and toggle load. One selection executes one native control. Rewards are PufferLib’s unchanged pickup, delivery, and shelf-return rewards.
+
+The default budget is 100 hours, with eight warehouses and 256 ticks per rollout. A greedy seed-0 evaluation runs before training and every five updates. Each evaluation also tests the current weights on the original 512-tick cooking episode using its original prompt. Cooking contributes no training data or gradients. These evaluations measure retention rather than enforce it. Checkpoints and metrics go in `runs/rware-from-cooking-220/`, with warehouse videos in `videos/rware/`. The original cooking adapter remains unchanged.
