@@ -1,0 +1,14 @@
+{
+  "checkpoint": 220,
+  "seed": 0,
+  "steps": 512,
+  "soups": 6,
+  "matched_actions": 1024,
+  "matched_prompts": 1024,
+  "maximum_probability_difference": 0.0,
+  "standard_peft_tensor_load": "373 tensors matched",
+  "environment_build": "fresh checkout of pinned PufferLib commit",
+  "replay": "512 ticks verified against native environment",
+  "training_smoke": "one short update; both LoRA and classifier weights changed",
+  "objective_unit_tests": 7
+}
