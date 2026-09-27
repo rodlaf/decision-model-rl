@@ -2,7 +2,7 @@
 
 Train decision models through interaction with PufferLib games. The first result is two cooperating Overcooked chefs on one RTX 5080.
 
-[Write-up and video](https://rlafuente.com/posts/2026-9-26-training-a-small-decision-model-to-cook.html) · [Trained weights](https://huggingface.co/rodneyslafuente/decision-model-rl-overcooked)
+Read the [write-up and watch the video](https://rlafuente.com/posts/2026-9-26-training-a-small-decision-model-to-cook.html), or download the [trained weights](https://huggingface.co/rodneyslafuente/decision-model-rl-overcooked).
 
 Each chef sees its own native observation expressed in text, game rules, and eight recent action outcomes. A shared OpenJev policy independently scores six buttons: `stay`, `up`, `down`, `left`, `right`, `interact`. Every selection executes exactly one native action. No pathfinding, scripted subgoals, action macros, or assigned roles.
 
