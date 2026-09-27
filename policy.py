@@ -82,7 +82,7 @@ class Policy:
         # Explicit text-only module names include Qwen3.5 attention, delta-net and MLP linears.
         targets=[n for n,m in base.named_modules() if isinstance(m,torch.nn.Linear) and '.language_model.layers.' in n]
         if not targets:raise RuntimeError('No text backbone target modules matched')
-        self.model=get_peft_model(base,LoraConfig(r=cfg['lora_rank'],lora_alpha=cfg['lora_alpha'],lora_dropout=0.,target_modules=targets,modules_to_save=['score'],bias='none'))
+        self.model=get_peft_model(base,LoraConfig(task_type='SEQ_CLS',r=cfg['lora_rank'],lora_alpha=cfg['lora_alpha'],lora_dropout=0.,target_modules=targets,modules_to_save=['score'],bias='none'))
         if cfg.get('gradient_checkpointing',True):
             self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant':False})
         self.template=base.config.nli_template
