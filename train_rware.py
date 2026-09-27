@@ -104,7 +104,7 @@ def main():
         baseline=evaluate(policy,prompt,cfg,out,0);core.atomic_json(out/'baseline.json',baseline)
         if baseline['overcooked_soups']!=6:raise RuntimeError('Cooking retention baseline differs from released checkpoint')
     count=0
-    while elapsed<cfg['duration_hours']*3600 and not core.STOP:
+    while (cfg['duration_hours'] is None or elapsed<cfg['duration_hours']*3600) and not core.STOP:
         start=time.monotonic();iteration+=1;count+=1;policy.model.eval()
         episodes,metrics=collect(policy,prompt,cfg,iteration,out)
         print('ROLLOUT',iteration,json.dumps(metrics),flush=True)

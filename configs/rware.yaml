@@ -38,7 +38,7 @@ actions:
 - turn right
 - toggle load
 hypothesis: Your next action should be {action}.
-duration_hours: 100
+duration_hours: null  # Run until explicitly stopped.
 gradient_checkpointing: false
 microbatch_states: 8
 optimizer_batch_size: 128
