@@ -1,0 +1,11 @@
+run_dir: runs/multitask-memory-v2
+source_run: runs/rware-from-cooking-220
+rware_config: configs/rware.yaml
+overcooked_config: configs/duo.yaml
+schedule:
+  - overcooked
+  - rware
+duration_hours: null
+eval_every: 4
+seed: 20260928
+video_dir: videos/multitask

@@ -6,13 +6,13 @@ import torch,yaml
 import train_single as core
 from train import optimizer_for,rollout_duo
 from policy import Policy,Prompt as CookingPrompt
-from rware import Warehouse,Prompt,outcome
+from rware import Warehouse,Prompt,ObservationMemory
 from exploration_objectives import EpisodicObservationNovelty
 from kitchen import ROOT
 
 
 def episode(policy,prompt,cfg,seed,steps):
-    env=Warehouse(seed,cfg['num_agents'],cfg['requests']);history=[[] for _ in range(env.num_agents)]
+    env=Warehouse(seed,cfg['num_agents'],cfg['requests']);history=[ObservationMemory(cfg['history_window']) for _ in range(env.num_agents)]
     totals=np.zeros(env.num_agents);trace=[];tic=time.monotonic()
     try:
         for tick in range(steps):
@@ -21,7 +21,7 @@ def episode(policy,prompt,cfg,seed,steps):
             with torch.inference_mode():prob=policy.distributions(states).exp().cpu()
             actions=prob.argmax(-1).tolist();before=env.state();env.step(actions)
             rewards=[env.reward(a) for a in range(env.num_agents)];totals+=rewards
-            for a in range(env.num_agents):history[a].append(outcome(obs[a],env.observation(a),actions[a],rewards[a]))
+            for a in range(env.num_agents):history[a].record(obs[a],env.observation(a),actions[a],rewards[a])
             trace.append(dict(tick=tick,states=states,actions=actions,probabilities=prob.tolist(),rewards=rewards,before=before,after=env.state(),deliveries=env.deliveries,returns=env.returns,pickups=env.pickups))
         return dict(seed=seed,steps=steps,deliveries=env.deliveries,completed_returns=env.returns,pickups=env.pickups,returns=totals.tolist(),seconds=time.monotonic()-tic,trace=trace)
     finally:env.close()
@@ -40,7 +40,7 @@ def retention(policy,cfg):
 def collect(policy,prompt,cfg,iteration,out):
     envs=[Warehouse(1000+iteration,cfg['num_agents'],cfg['requests']) for _ in range(cfg['group_size'])]
     pairs=[(env,a) for env in envs for a in range(env.num_agents)]
-    histories=[[] for _ in pairs];traces=[[] for _ in pairs]
+    histories=[ObservationMemory(cfg['history_window']) for _ in pairs];traces=[[] for _ in pairs]
     novelty=[EpisodicObservationNovelty(env.observation(a),cfg['novelty_bonus'],cfg['novelty_episode_cap'],cfg['novelty_quantization'],cfg['novelty_segment_cap']) for env,a in pairs]
     last_noop=[None]*len(pairs);streak=[0]*len(pairs);tic=time.monotonic()
     try:
@@ -60,7 +60,7 @@ def collect(policy,prompt,cfg,iteration,out):
                 signature=(obs[i].tobytes(),actions[i]);repeated=unchanged and last_noop[i]==signature
                 last_noop[i]=signature if unchanged else None;streak[i]=streak[i]+1 if unchanged else 0
                 penalty=-cfg['repeated_noop_penalty'] if repeated else 0.
-                report=outcome(obs[i],after,actions[i],reward);histories[i].append(report)
+                histories[i].record(obs[i],after,actions[i],reward);report=histories[i].history[-1]
                 traces[i].append(dict(state=states[i],action=actions[i],old_logp=logs[i][actions[i]],old_distribution=probabilities[i],reward=reward,training_reward=reward+intrinsic+penalty,intrinsic_reward=intrinsic,no_op_penalty=penalty,noop_streak=streak[i],outcome=report))
             if tick%16==0:core.atomic_json(out/'status.json',dict(phase='rollout',iteration=iteration,tick=tick+1,horizon=cfg['rollout_steps'],pid=os.getpid()))
         episodes=[dict(return_=sum(t['reward'] for t in trace),trace=trace) for trace in traces]
@@ -73,7 +73,7 @@ def evaluate(policy,prompt,cfg,out,iteration):
     policy.model.eval();rware=episode(policy,prompt,cfg,0,cfg['eval_steps']);cooking=retention(policy,cfg)
     core.atomic_json(out/'latest-eval.json',dict(iteration=iteration,**rware))
     core.atomic_json(out/'latest-retention.json',dict(iteration=iteration,**cooking))
-    summary=dict(iteration=iteration,rware_deliveries=rware['deliveries'],rware_completed_returns=rware['completed_returns'],rware_pickups=rware['pickups'],rware_mean_return=float(np.mean(rware['returns'])),overcooked_soups=cooking['soups'])
+    summary=dict(iteration=iteration,prompt_version=cfg['prompt_version'],rware_deliveries=rware['deliveries'],rware_completed_returns=rware['completed_returns'],rware_pickups=rware['pickups'],rware_mean_return=float(np.mean(rware['returns'])),overcooked_soups=cooking['soups'])
     with (out/'evaluations.jsonl').open('a') as f:f.write(json.dumps(summary)+'\n')
     print('EVAL',json.dumps(summary),flush=True)
     from render_rware import render
@@ -98,6 +98,9 @@ def main():
     else:
         source=ROOT/cfg['initial_adapter'];policy.load(source)
         core.atomic_json(out/'lineage.json',dict(source=str(source),source_checkpoint=220,adapter_sha256=hashlib.sha256((source/'adapter_model.safetensors').read_bytes()).hexdigest(),optimizer='fresh; continue existing LoRA and classifier',old_task_training=False))
+    if (out/'best-eval.json').exists():
+        previous=json.loads((out/'best-eval.json').read_text())
+        best=max(best,previous['rware_completed_returns']*10000+previous['rware_deliveries']*100+previous['rware_mean_return'])
     core.atomic_json(out/'config.json',cfg);core.atomic_json(out/'model.json',policy.metadata)
     print('START',json.dumps(dict(pid=os.getpid(),source=str(source),iteration=iteration,hours=cfg['duration_hours'])),flush=True)
     if iteration==0 and not args.skip_evaluation:
@@ -119,7 +122,7 @@ def main():
                 best=score;policy.save(out/'best-eval-adapter');core.atomic_json(out/'best-eval.json',evaluation)
                 core.atomic_json(out/'best-eval-trace.json',json.loads((out/'latest-eval.json').read_text()))
             metrics.update(evaluation)
-        metrics.update(iteration=iteration,elapsed_seconds=elapsed,agent_moves_per_second=cfg['group_size']*cfg['num_agents']*cfg['rollout_steps']/metrics['rollout_seconds'],max_tokens=policy.metadata['max_tokens'],peak_vram_gib=torch.cuda.max_memory_allocated()/1024**3)
+        metrics.update(iteration=iteration,prompt_version=cfg['prompt_version'],elapsed_seconds=elapsed,agent_moves_per_second=cfg['group_size']*cfg['num_agents']*cfg['rollout_steps']/metrics['rollout_seconds'],max_tokens=policy.metadata['max_tokens'],peak_vram_gib=torch.cuda.max_memory_allocated()/1024**3)
         with (out/'metrics.jsonl').open('a') as f:f.write(json.dumps(metrics)+'\n')
         core.atomic_json(out/'status.json',dict(phase='updated',checkpoint=str(checkpoint),**metrics));print('UPDATE',json.dumps(metrics),flush=True)
         if args.max_updates and count>=args.max_updates:break

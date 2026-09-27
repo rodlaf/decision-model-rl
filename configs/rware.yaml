@@ -5,7 +5,7 @@ source_best_iteration: 220
 source_best_soups: 6
 run_dir: runs/rware-from-cooking-220
 environment: rware_tiny_two_robots
-prompt_version: rware_native27_v1
+prompt_version: rware_native27_observed_memory_v2
 num_agents: 2
 group_size: 8
 rollout_steps: 256
@@ -17,20 +17,18 @@ clip_epsilon: 0.2
 entropy_coefficient: 0.05
 update_epochs: 2
 history_window: 8
-max_tokens: 512
+max_tokens: 768
 checkpoint_every: 5
 eval_every: 5
 eval_steps: 512
 seed: 20260927
-rules: 'Warehouse: deliver requested shelves to delivery goals, then return emptied
-  shelves to shelf storage. You control one robot; the other acts independently. Choose
-  ONE native button. Move forward advances one tile in your facing direction. Turn
-  left/right rotates 90 degrees without moving. Toggle load picks up a requested shelf
-  on your tile, delivers it at a goal, or returns an emptied shelf at storage. Unloaded
-  robots can travel under shelves; loaded robots cannot enter other shelves. Avoid
-  collisions. Coordinates increase right/down. Only the eight neighboring tiles are
-  observed; your current tile is not reported. Recent moves record previously observed
-  arrival tiles.'
+rules: 'Warehouse: deliver requested shelves to goals, then return emptied shelves
+  to storage. Choose one native button for your robot. Move forward advances one tile;
+  turn left/right rotates 90 degrees. Toggle load picks up a requested shelf, delivers
+  at a goal, or returns an emptied shelf at storage, all on your current tile. Unloaded
+  robots fit under shelves; loaded robots cannot enter other shelves. Avoid collisions.
+  Coordinates increase right/down. Neighbors are observed now; map memory records
+  earlier observations, not hidden information.'
 actions:
 - wait
 - move forward
@@ -38,7 +36,7 @@ actions:
 - turn right
 - toggle load
 hypothesis: Your next action should be {action}.
-duration_hours: null  # Run until explicitly stopped.
+duration_hours: null
 gradient_checkpointing: false
 microbatch_states: 8
 optimizer_batch_size: 128
@@ -70,3 +68,4 @@ requests: 2
 video_dir: videos/rware
 retention_config: configs/duo.yaml
 retention_steps: 512
+memory_locations_per_type: 6

@@ -66,7 +66,8 @@ def update(policy,optimizer,cfg,episodes,out,iteration):
         records=[(t,float(a)) for e,a in zip(episodes,advantages) for t in e['trace']]
     token_budget=cfg.get('training_token_budget')
     if token_budget:
-        encoded=policy.tok([policy.template.format(premise=t['state'],hypothesis=cfg['hypothesis'].format(action='interact')) for t,a in records])['input_ids']
+        longest=max(cfg['actions'],key=lambda a:len(policy.tok(a)['input_ids']))
+        encoded=policy.tok([policy.template.format(premise=t['state'],hypothesis=cfg['hypothesis'].format(action=longest)) for t,a in records])['input_ids']
         for (t,a),ids in zip(records,encoded):t['nli_token_count']=len(ids)
     policy.model.train();parameters=[p for p in policy.model.parameters() if p.requires_grad]
     head=next(p for n,p in policy.model.named_parameters() if p.requires_grad and 'modules_to_save' in n)
@@ -125,11 +126,11 @@ def update(policy,optimizer,cfg,episodes,out,iteration):
         cfg['entropy_coefficient']=adapt_entropy(used_entropy,rollout_entropy,cfg['entropy_target'],cfg.get('entropy_adaptation_rate',0.2),cfg.get('entropy_min',0.001),cfg.get('entropy_max',0.2))
     return dict(plating_events=sum(t.get('before',{}).get('chef',{}).get('holding')!='plated soup' and t.get('after',{}).get('chef',{}).get('holding')=='plated soup' for e in episodes for t in e['trace']),no_change_fraction=float(np.mean(['no observed change' in t['outcome'] for e in episodes for t in e['trace']])),repeated_noop_fraction=float(np.mean([bool(t.get('no_op_penalty',0.)) for e in episodes for t in e['trace']])),entropy_coefficient=used_entropy,next_entropy_coefficient=cfg['entropy_coefficient'],rollout_entropy=rollout_entropy,intrinsic_return_mean=float(np.mean([sum(t.get('intrinsic_reward',0.) for t in e['trace']) for e in episodes])),returns=returns.tolist(),mean_return=float(returns.mean()),reward_std=std,zero_advantage_group=std<1e-6,soups=sum(e.get('soups',0) for e in episodes),loss=means[0],entropy=means[1],kl_old=means[2],gradient_norm=means[3],optimizer_steps=updates,kl_early_stop=stop_early,head_max_update=head_change,lora_max_update=lora_change)
 
-def save(policy,optimizer,out,iteration,elapsed,best):
+def save(policy,optimizer,out,iteration,elapsed,best,extra_state=None):
     dest=out/f'checkpoint-{iteration:06d}';temp=out/f'.checkpoint-{iteration:06d}.tmp'
     if temp.exists():shutil.rmtree(temp)
     temp.mkdir();policy.save(temp)
-    torch.save(dict(optimizer=optimizer.state_dict(),iteration=iteration,elapsed_seconds=elapsed,best_score=best,reward_scheme=policy.cfg.get('reward_scheme'),entropy_coefficient=policy.cfg['entropy_coefficient'],rng=torch.get_rng_state(),cuda_rng=torch.cuda.get_rng_state(),python_rng=random.getstate(),numpy_rng=np.random.get_state()),temp/'training_state.pt')
+    torch.save(dict(optimizer=optimizer.state_dict(),iteration=iteration,elapsed_seconds=elapsed,best_score=best,reward_scheme=policy.cfg.get('reward_scheme'),entropy_coefficient=policy.cfg['entropy_coefficient'],rng=torch.get_rng_state(),cuda_rng=torch.cuda.get_rng_state(),python_rng=random.getstate(),numpy_rng=np.random.get_state(),**(extra_state or {})),temp/'training_state.pt')
     temp.replace(dest)
     atomic_json(out/'latest-checkpoint.json',dict(path=str(dest),iteration=iteration,elapsed_seconds=elapsed))
     checkpoints=sorted(out.glob('checkpoint-*'))

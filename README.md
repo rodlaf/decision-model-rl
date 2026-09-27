@@ -63,6 +63,18 @@ bash build_rware.sh
 python train_rware.py --config configs/rware.yaml
 ```
 
-This continues the released cooking checkpoint 220 on PufferLib’s tiny warehouse with two independently acting robots. It updates the same LoRA adapters and NLI head. Robots receive only their native 27-value observation expressed in text and eight recent action outcomes. The five choices are wait, move forward, turn left, turn right, and toggle load. One selection executes one native control. Rewards are PufferLib’s unchanged pickup, delivery, and shelf-return rewards.
+This continues the released cooking checkpoint 220 on PufferLib’s tiny warehouse with two independently acting robots. It updates the same LoRA adapters and NLI head. Robots receive only their native 27-value observation expressed in text and eight numbered recent action outcomes. Each robot also keeps its own observed map: explicit coordinates for nearby tiles, last-seen requested shelves and goals, and observed shelf-storage sites. Locations are learned only through its native observations and cleared between episodes. Up to six locations per type are shown with their observation ages. The five choices are wait, move forward, turn left, turn right, and toggle load. One selection executes one native control. Rewards are PufferLib’s unchanged pickup, delivery, and shelf-return rewards.
 
 Training runs indefinitely by default (`duration_hours: null`), with eight warehouses and 256 ticks per rollout. Set a number of hours to impose a time limit. A greedy seed-0 evaluation runs before training and every five updates. Each evaluation also tests the current weights on the original 512-tick cooking episode using its original prompt. Cooking contributes no training data or gradients. These evaluations measure retention rather than enforce it. Checkpoints and metrics go in `runs/rware-from-cooking-220/`, with warehouse videos in `videos/rware/`. The original cooking adapter remains unchanged.
+
+## Alternating both games
+
+```bash
+python train_multitask.py --config configs/multitask.yaml
+```
+
+This continues the latest checkpoint from `source_run`, preserving its adapter, classifier, and optimizer. It alternates one fresh Overcooked rollout/update with one fresh RWARE rollout/update indefinitely. Each game's advantages and adaptive entropy coefficient are computed separately. Both games train the same weights with one shared optimizer. This is training on both tasks, so the cooking score now measures recovery and ongoing performance. The earlier RWARE-only run remains available for the original forgetting comparison.
+
+The cooking prompt and native controls are unchanged. RWARE uses observed-map memory and eight recent actions. The rollout horizons remain 512 cooking ticks and 256 warehouse ticks, so the 1:1 schedule counts updates rather than environment steps. Every four updates, both games receive a 512-tick greedy seed-0 evaluation and video. Checkpoints preserve the task schedule position and both entropy controllers on resume. `best-overcooked-adapter`, `best-rware-adapter`, and `best-balanced-adapter` preserve separate selections; the balanced selection maximizes the smaller of cooking soups/6 and completed shelf returns/2, using their sum to break ties. This selection affects saved snapshots, not the training loss.
+
+Run files are in `runs/multitask-memory-v2/`; videos are in `videos/multitask/overcooked/` and `videos/multitask/rware/`. Retention is measured, not guaranteed.

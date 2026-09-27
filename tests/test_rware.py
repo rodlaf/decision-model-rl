@@ -26,4 +26,35 @@ class NativeWarehouseTests(unittest.TestCase):
             self.assertIn('now facing',outcome(before,after,2,0))
         finally:e.close()
 
+
+from rware import ObservationMemory,Prompt
+
+class ObservationMemoryTests(unittest.TestCase):
+    @staticmethod
+    def obs(x=3,y=3):
+        a=np.zeros(27,dtype=np.float32);a[0]=(y*10+x)/110;a[1]=.25
+        a[5::3]=.25
+        return a
+    def test_known_locations_persist_but_requests_update_when_reobserved(self):
+        a=self.obs();a[5]=.75;a[11]=1.
+        m=ObservationMemory();m.observe(a)
+        far=self.obs(8,8);m.tick=15;m.observe(far)
+        text=m.describe(far)
+        self.assertIn('(3,2) [age 15]',text);self.assertIn('(4,3) [age 15]',text)
+        m.observe(self.obs());self.assertNotIn((3,2),{p for p,(tile,t) in m.tiles.items() if tile=='requested shelf'})
+        self.assertIn((3,2),m.shelf_sites)
+    def test_memory_is_per_agent_and_history_is_bounded(self):
+        a=self.obs();a[5]=.75;m=ObservationMemory(8);other=ObservationMemory(8)
+        m.observe(a);self.assertEqual(other.tiles,{})
+        for _ in range(20):m.record(a,a,0,0)
+        self.assertEqual(len(m.history),8);self.assertTrue(m.history[0].startswith('Step 13:'))
+    def test_observed_carried_shelf_is_not_a_storage_site(self):
+        a=self.obs();a[5]=.75;a[3]=1.;a[4]=.25
+        m=ObservationMemory();m.observe(a);self.assertNotIn((3,2),m.shelf_sites)
+    def test_prompt_has_coordinates_and_no_unseen_goals(self):
+        p=Prompt(dict(history_window=8,rules='Choose a native button.'))
+        text=p.build(self.obs(),ObservationMemory())
+        self.assertIn('up (3,2): empty floor.',text)
+        self.assertIn('Delivery goals: none seen',text)
+
 if __name__=='__main__':unittest.main()

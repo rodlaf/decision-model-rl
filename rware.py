@@ -1,4 +1,5 @@
 """Native 27-value RWARE observations and five primitive controls."""
+from collections import deque
 import ctypes as C
 import numpy as np
 from kitchen import ROOT
@@ -55,11 +56,43 @@ def outcome(before,after,action,reward):
     if reward:changes.append(f'reward {reward:g}')
     return ACTIONS[action]+': '+(', '.join(changes) or 'no observed change')+'.'
 
+class ObservationMemory:
+    """Per-robot episode memory built exclusively from that robot's observations."""
+    def __init__(self,history_window=8):
+        self.tick=0;self.tiles={};self.shelf_sites={};self.goals={}
+        self.history=deque(maxlen=history_window)
+    def observe(self,obs):
+        d=decode(obs);x,y=d['position']
+        for (dx,dy),(tile,robot) in zip(OFFSETS,d['neighbors']):
+            pos=(x+dx,y+dy)
+            if tile=='boundary':continue
+            self.tiles[pos]=(tile,self.tick)
+            if tile=='delivery goal':self.goals[pos]=self.tick
+            # A shelf seen without a robot is a storage-site observation.
+            # Carried shelves do not create fictitious storage sites.
+            if tile in ('shelf','requested shelf') and robot is None:self.shelf_sites[pos]=self.tick
+    def record(self,before,after,action,reward):
+        self.tick+=1
+        self.history.append(f"Step {self.tick}: "+outcome(before,after,action,reward))
+        self.observe(after)
+    def describe(self,obs,limit=6):
+        d=decode(obs)
+        def locations(items):
+            rows=sorted(items.items(),key=lambda item:(-item[1],item[0]))
+            text=', '.join(f"({p[0]},{p[1]}) [age {self.tick-t}]" for p,t in rows[:limit]) or 'none seen'
+            return text+(f'; {len(rows)-limit} older locations omitted' if len(rows)>limit else '')
+        requested={p:t for p,(tile,t) in self.tiles.items() if tile=='requested shelf' and not (p==d['position'] and d['load']!='nothing')}
+        return ("Map memory from your observations only. Ages are steps since last seen; shelves may have moved.\n"
+                +'Requested shelves: '+locations(requested)+'.\n'
+                +'Delivery goals: '+locations(self.goals)+'.\n'
+                +'Shelf storage sites: '+locations(self.shelf_sites)+'.')
+
 class Prompt:
     def __init__(self,cfg):self.cfg=cfg
-    def build(self,obs,history):
-        d=decode(obs)
-        neighbors='\n'.join(f"{name}: {tile}"+(f', robot facing {robot}' if robot else '')+'.' for name,(tile,robot) in zip(NEIGHBORS,d['neighbors']))
-        history=' '.join(history[-self.cfg['history_window']:]) or 'None yet.'
+    def build(self,obs,memory):
+        memory.observe(obs);d=decode(obs);x,y=d['position']
+        neighbors='\n'.join(f"{name} ({x+dx},{y+dy}): {tile}"+(f', robot facing {robot}' if robot else '')+'.' for name,(dx,dy),(tile,robot) in zip(NEIGHBORS,OFFSETS,d['neighbors']))
+        history='\n'.join(memory.history) or 'None yet.'
         return (self.cfg['rules'].strip()+f"\nYou are at {d['position']}, facing {d['direction']}, carrying {d['load']}.\n"
-                +neighbors+'\nRecent actions, oldest first: '+history+'\nWhich button should you press now?')
+                +neighbors+'\n'+memory.describe(obs,self.cfg.get('memory_locations_per_type',6))
+                +'\nRecent actions, oldest first:\n'+history+'\nWhich button should you press now?')
